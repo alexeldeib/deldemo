@@ -43,6 +43,35 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+func createPod(ctx context.Context, c client.Client, namespace string, name string) error {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels: map[string]string{
+				"app": "example",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "nginx",
+					Image: "nginx:latest",
+					Ports: []corev1.ContainerPort{
+						{
+							Name:          "http",
+							ContainerPort: 80,
+							Protocol:      corev1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return c.Create(ctx, pod)
+}
+
 func main() {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
@@ -60,6 +89,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create example pod
+	setupLog.Info("creating example pod in default namespace")
+	err = createPod(context.Background(), kubeclient, "default", "example-pod")
+	if err != nil {
+		fmt.Printf("failed to create pod: %#+v", err)
+		os.Exit(1)
+	}
+
 	setupLog.Info("deleting specific pod in default namespace")
 	err = kubeclient.Delete(context.Background(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -68,7 +105,7 @@ func main() {
 		},
 	})
 	if client.IgnoreNotFound(err) != nil {
-		fmt.Printf("failed to create kubeclient: %#+v", err)
+		fmt.Printf("failed to delete pod: %#+v", err)
 		os.Exit(1)
 	}
 
@@ -86,7 +123,7 @@ func main() {
 
 		err = kubeclient.Delete(context.Background(), pod)
 		if client.IgnoreNotFound(err) != nil {
-			fmt.Printf("failed to create kubeclient: %#+v", err)
+			fmt.Printf("failed to delete pod: %#+v", err)
 			os.Exit(1)
 		}
 	}
@@ -94,7 +131,7 @@ func main() {
 	setupLog.Info("deleting all pods in default namespace")
 	err = kubeclient.DeleteAllOf(context.Background(), &corev1.Pod{}, client.InNamespace("default"))
 	if err != nil {
-		fmt.Printf("failed to create kubeclient: %#+v", err)
+		fmt.Printf("failed to delete all pods: %#+v", err)
 		os.Exit(1)
 	}
 }
