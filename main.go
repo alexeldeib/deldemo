@@ -60,41 +60,79 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("deleting specific pod in default namespace")
-	err = kubeclient.Delete(context.Background(), &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "default",
-			Name:      "foo",
-		},
-	})
-	if client.IgnoreNotFound(err) != nil {
-		fmt.Printf("failed to create kubeclient: %#+v", err)
+	// Create example pods
+	setupLog.Info("creating example pods in default namespace")
+	podsToCreate := []string{"example-pod-1", "example-pod-2", "example-pod-3"}
+
+	for _, podName := range podsToCreate {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      podName,
+				Namespace: "default",
+				Labels: map[string]string{
+					"app": "example",
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  "nginx",
+						Image: "nginx:latest",
+						Ports: []corev1.ContainerPort{
+							{
+								ContainerPort: 80,
+								Protocol:      corev1.ProtocolTCP,
+							},
+						},
+					},
+				},
+			},
+		}
+
+		setupLog.WithValues("name", pod.Name).Info("creating pod")
+		err = kubeclient.Create(context.Background(), pod)
+		if err != nil {
+			fmt.Printf("failed to create pod %s: %#+v", pod.Name, err)
+			// Continue with other pods even if one fails
+			continue
+		}
+	}
+
+	// List the created pods
+	setupLog.Info("listing pods with app=example label")
+	podList := &corev1.PodList{}
+	err = kubeclient.List(context.Background(), podList,
+		client.InNamespace("default"),
+		client.MatchingLabels(map[string]string{"app": "example"}))
+	if err != nil {
+		fmt.Printf("failed to list pods: %#+v", err)
 		os.Exit(1)
 	}
 
-	toBeDeleted := []string{"foo", "bar", "baz"}
+	setupLog.Info("pods created successfully", "count", len(podList.Items))
+	for _, pod := range podList.Items {
+		setupLog.Info("pod details",
+			"name", pod.Name,
+			"namespace", pod.Namespace,
+			"status", pod.Status.Phase)
+	}
 
-	for i := range toBeDeleted {
+	// Cleanup example - delete the pods we created
+	setupLog.Info("cleaning up - deleting example pods")
+	for _, podName := range podsToCreate {
 		pod := &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: "default",
-				Name:      toBeDeleted[i],
+				Name:      podName,
 			},
 		}
 
 		setupLog.WithValues("name", pod.Name).Info("deleting pod")
-
 		err = kubeclient.Delete(context.Background(), pod)
 		if client.IgnoreNotFound(err) != nil {
-			fmt.Printf("failed to create kubeclient: %#+v", err)
-			os.Exit(1)
+			fmt.Printf("failed to delete pod %s: %#+v", pod.Name, err)
+			// Continue with other pods even if one fails
+			continue
 		}
-	}
-
-	setupLog.Info("deleting all pods in default namespace")
-	err = kubeclient.DeleteAllOf(context.Background(), &corev1.Pod{}, client.InNamespace("default"))
-	if err != nil {
-		fmt.Printf("failed to create kubeclient: %#+v", err)
-		os.Exit(1)
 	}
 }
